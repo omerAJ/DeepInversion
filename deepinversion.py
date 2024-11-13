@@ -194,18 +194,27 @@ class DeepInversionClass(object):
             targets = torch.LongTensor([random.randint(0, 999) for _ in range(self.bs)]).to('cuda')
             if not self.random_label:
                 # preselected classes, good for ResNet50v1.5
-                targets = [1, 933, 946, 980, 25, 63, 92, 94, 107, 985, 151, 154, 207, 250, 270, 277, 283, 292, 294, 309,
-                           311,
-                           325, 340, 360, 386, 402, 403, 409, 530, 440, 468, 417, 590, 670, 817, 762, 920, 949, 963,
-                           967, 574, 487]
-
+                # targets = [1, 933, 946, 980, 25, 63, 92, 94, 107, 985, 151, 154, 207, 250, 270, 277, 283, 292, 294, 309, 311,
+                #         325, 340, 360, 386, 402, 403, 409, 530, 440, 468, 417, 590, 670, 817, 762, 920, 949, 963,
+                #         967, 574, 487, 864, 394, 776, 911, 430,  41, 265, 988, 523, 497, 414, 940, 802, 849,
+                #         310, 991, 488, 366, 597, 913, 929, 223]
+                            
+                targets = [1, 1, 1, 1, 1, 1,  #goldfish
+                        933, 933, 933, 933, 933, 933,  #cheeseburger
+                        430, 430, 430, 430, 430, 430,  #basketball
+                        483, 483, 483, 483, 483, 483,  #castle
+                        703, 703, 703, 703, 703, 703,   #park bench
+                        779, 779, 779, 779, 779, 779  #school bus
+                        ]
+                            
                 targets = torch.LongTensor(targets * (int(self.bs / len(targets)))).to('cuda')
+                
 
         img_original = self.image_resolution
 
         data_type = torch.half if use_fp16 else torch.float
         inputs = torch.randn((self.bs, 3, img_original, img_original), requires_grad=True, device='cuda',
-                             dtype=data_type)
+                            dtype=data_type)
         pooling_function = nn.modules.pooling.AvgPool2d(kernel_size=2)
 
         if self.setting_id==0:
@@ -307,7 +316,7 @@ class DeepInversionClass(object):
                         M = torch.clamp(M, 0.01, 0.99)
                         eps = 0.0
                         loss_verifier_cig = 0.5 * kl_loss(torch.log(P + eps), M) + 0.5 * kl_loss(torch.log(Q + eps), M)
-                         # JS criteria - 0 means full correlation, 1 - means completely different
+                        # JS criteria - 0 means full correlation, 1 - means completely different
                         loss_verifier_cig = 1.0 - torch.clamp(loss_verifier_cig, 0.0, 1.0)
 
                     if local_rank==0:
@@ -359,10 +368,10 @@ class DeepInversionClass(object):
                 if iteration % save_every==0 and (save_every > 0):
                     if local_rank==0:
                         vutils.save_image(inputs,
-                                          '{}/best_images/output_{:05d}_gpu_{}.png'.format(self.prefix,
-                                                                                           iteration // save_every,
-                                                                                           local_rank),
-                                          normalize=True, scale_each=True, nrow=int(10))
+                                        '{}/best_images/output_{:05d}_gpu_{}.png'.format(self.prefix,
+                                                                                        iteration // save_every,
+                                                                                        local_rank),
+                                        normalize=True, scale_each=True, nrow=int(10))
 
         if self.store_best_images:
             best_inputs = denormalize(best_inputs)
@@ -379,12 +388,12 @@ class DeepInversionClass(object):
             if 0:
                 #save into separate folders
                 place_to_store = '{}/s{:03d}/img_{:05d}_id{:03d}_gpu_{}_2.jpg'.format(self.final_data_path, class_id,
-                                                                                          self.num_generations, id,
-                                                                                          local_rank)
+                                                                                        self.num_generations, id,
+                                                                                        local_rank)
             else:
                 place_to_store = '{}/img_s{:03d}_{:05d}_id{:03d}_gpu_{}_2.jpg'.format(self.final_data_path, class_id,
-                                                                                          self.num_generations, id,
-                                                                                          local_rank)
+                                                                                        self.num_generations, id,
+                                                                                        local_rank)
 
             image_np = images[id].data.cpu().numpy().transpose((1, 2, 0))
             pil_image = Image.fromarray((image_np * 255).astype(np.uint8))

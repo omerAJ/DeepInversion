@@ -63,8 +63,9 @@ def run(args):
         from models.resnetv15 import build_resnet
         net = build_resnet("resnet50", "classic")
     else:
+        from torchvision.models import resnet50, ResNet50_Weights
         print("loading torchvision model for inversion with the name: {}".format(args.arch_name))
-        net = models.__dict__[args.arch_name](pretrained=True)
+        net = models.__dict__[args.arch_name](weights=ResNet50_Weights.IMAGENET1K_V1)
 
     net = net.to(device)
 
@@ -88,7 +89,8 @@ def run(args):
         # if multiple GPUs are used then we can change code to load different verifiers to different GPUs
         if args.local_rank == 0:
             print("loading verifier: ", args.verifier_arch)
-            net_verifier = models.__dict__[args.verifier_arch](pretrained=True).to(device)
+            from torchvision.models import MobileNet_V2_Weights
+            net_verifier = models.__dict__[args.verifier_arch](weights=MobileNet_V2_Weights.DEFAULT).to(device)
             net_verifier.eval()
 
             if use_fp16:
@@ -158,17 +160,17 @@ def run(args):
         hook_for_display = None
 
     DeepInversionEngine = DeepInversionClass(net_teacher=net,
-                                             final_data_path=adi_data_path,
-                                             path=exp_name,
-                                             parameters=parameters,
-                                             setting_id=args.setting_id,
-                                             bs = bs,
-                                             use_fp16 = args.fp16,
-                                             jitter = jitter,
-                                             criterion=criterion,
-                                             coefficients = coefficients,
-                                             network_output_function = network_output_function,
-                                             hook_for_display = hook_for_display)
+                                            final_data_path=adi_data_path,
+                                            path=exp_name,
+                                            parameters=parameters,
+                                            setting_id=args.setting_id,
+                                            bs = bs,
+                                            use_fp16 = args.fp16,
+                                            jitter = jitter,
+                                            criterion=criterion,
+                                            coefficients = coefficients,
+                                            network_output_function = network_output_function,
+                                            hook_for_display = hook_for_display)
     net_student=None
     if args.adi_scale != 0:
         net_student = net_verifier
@@ -189,7 +191,7 @@ def main():
     parser.add_argument('--arch_name', default='resnet50', type=str, help='model name from torchvision or resnet50v15')
 
     parser.add_argument('--fp16', action='store_true', help='use FP16 for optimization')
-    parser.add_argument('--exp_name', type=str, default='test', help='where to store experimental data')
+    parser.add_argument('--exp_name', type=str, default='test_2', help='where to store experimental data')
 
     parser.add_argument('--verifier', action='store_true', help='evaluate batch with another model')
     parser.add_argument('--verifier_arch', type=str, default='mobilenet_v2', help = "arch name from torchvision models to act as a verifier")
