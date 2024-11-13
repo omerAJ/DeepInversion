@@ -29,18 +29,25 @@ from utils.utils import load_model_pytorch, distributed_is_initialized
 
 random.seed(0)
 
+import torch
 
 def validate_one(input, target, model):
-    """Perform validation on the validation set"""
+    """Perform validation on the validation set where target is a probability distribution."""
 
     def accuracy(output, target, topk=(1,)):
-        """Computes the precision@k for the specified values of k"""
+        """Computes the precision@k for the specified values of k, adapted for softmax target."""
         maxk = max(topk)
         batch_size = target.size(0)
 
+        # Get the class index with the highest probability in the target distribution for each sample
+        _, true_class = target.max(dim=1)
+
+        # Get the top-k predictions for each sample
         _, pred = output.topk(maxk, 1, True, True)
         pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        # Check if the predictions are correct
+        correct = pred.eq(true_class.view(1, -1).expand_as(pred))
 
         res = []
         for k in topk:
@@ -53,6 +60,7 @@ def validate_one(input, target, model):
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
 
     print("Verifier accuracy: ", prec1.item())
+
 
 
 def run(args):
@@ -191,7 +199,7 @@ def main():
     parser.add_argument('--arch_name', default='resnet50', type=str, help='model name from torchvision or resnet50v15')
 
     parser.add_argument('--fp16', action='store_true', help='use FP16 for optimization')
-    parser.add_argument('--exp_name', type=str, default='test_2', help='where to store experimental data')
+    parser.add_argument('--exp_name', type=str, default='temp', help='where to store experimental data')
 
     parser.add_argument('--verifier', action='store_true', help='evaluate batch with another model')
     parser.add_argument('--verifier_arch', type=str, default='mobilenet_v2', help = "arch name from torchvision models to act as a verifier")

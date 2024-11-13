@@ -188,26 +188,32 @@ class DeepInversionClass(object):
         best_cost = 1e4
         criterion = self.criterion
 
-        # setup target labels
+        # targets = [1, 1, 1, 1, 1, 1,  #goldfish
+        #             933, 933, 933, 933, 933, 933,  #cheeseburger
+        #             430, 430, 430, 430, 430, 430,  #basketball
+        #             483, 483, 483, 483, 483, 483,  #castle
+        #             703, 703, 703, 703, 703, 703,   #park bench
+        #             779, 779, 779, 779, 779, 779  #school bus
+        #             ]
         if targets is None:
-            #only works for classification now, for other tasks need to provide target vector
-            targets = torch.LongTensor([random.randint(0, 999) for _ in range(self.bs)]).to('cuda')
-            if not self.random_label:
-                # preselected classes, good for ResNet50v1.5
-                # targets = [1, 933, 946, 980, 25, 63, 92, 94, 107, 985, 151, 154, 207, 250, 270, 277, 283, 292, 294, 309, 311,
-                #         325, 340, 360, 386, 402, 403, 409, 530, 440, 468, 417, 590, 670, 817, 762, 920, 949, 963,
-                #         967, 574, 487, 864, 394, 776, 911, 430,  41, 265, 988, 523, 497, 414, 940, 802, 849,
-                #         310, 991, 488, 366, 597, 913, 929, 223]
-                            
-                targets = [1, 1, 1, 1, 1, 1,  #goldfish
-                        933, 933, 933, 933, 933, 933,  #cheeseburger
-                        430, 430, 430, 430, 430, 430,  #basketball
-                        483, 483, 483, 483, 483, 483,  #castle
-                        703, 703, 703, 703, 703, 703,   #park bench
-                        779, 779, 779, 779, 779, 779  #school bus
-                        ]
-                            
-                targets = torch.LongTensor(targets * (int(self.bs / len(targets)))).to('cuda')
+            # Load softmax outputs from file instead of generating random class labels
+            softmax_target_file = r"D:\datasets\imagenetImages\basketball_softmax_outputs.npy"
+
+            # Load softmax targets from file
+            softmax_targets = np.load(softmax_target_file)  # Assuming shape (batch_size, num_classes)
+
+            # Convert to torch tensor and move to CUDA
+            targets = torch.from_numpy(softmax_targets).to('cuda')
+            # smooth targets using temperature
+            # targets = torch.nn.functional.softmax(targets / 1.0, dim=1)
+
+            # Ensure compatibility with model’s data type (convert to float16 if `use_fp16` is True)
+            if self.use_fp16:
+                targets = targets.half()
+
+            # Print shape for verification
+            # print(f"targets: {targets.shape}")
+            # sd
                 
 
         img_original = self.image_resolution
@@ -231,6 +237,9 @@ class DeepInversionClass(object):
                 if self.setting_id == 2:
                     iterations_per_layer = 20000
 
+
+            ######## debugging ########
+            # iterations_per_layer = 10
             if lr_it==0 and skipfirst:
                 continue
 
@@ -413,7 +422,8 @@ class DeepInversionClass(object):
             targets = torch.from_numpy(np.array(targets).squeeze()).cuda()
             if use_fp16:
                 targets = targets.half()
-
+            print(f"targets: {targets.shape}")
+            sd
         self.get_images(net_student=net_student, targets=targets)
 
         net_teacher.eval()
