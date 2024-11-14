@@ -19,7 +19,7 @@ import numpy as np
 import torch.cuda.amp as amp
 import os
 import torchvision.models as models
-from utils.utils import load_model_pytorch, distributed_is_initialized
+from utils.utils import load_model_pytorch, distributed_is_initialized, color_jitter
 
 random.seed(0)
 
@@ -102,7 +102,7 @@ def run(args):
     print('==> Resuming from checkpoint..')
 
     # Load the MNIST model
-    path_to_model = "D:/omer/DeepInversion/models/best_resnet50_mnist.pth"
+    path_to_model = "D:\omer\DeepInversion\models\only5SamplesZeroClass_resnet50_mnist.pth"
     def load_model_pytorch(model, checkpoint_path, gpu_n=None):
         """
         Load model weights from a PyTorch checkpoint file.
@@ -237,7 +237,7 @@ def main():
 
     parser.add_argument('--do_flip', action='store_true', help='apply flip during model inversion')
     parser.add_argument('--random_label', action='store_true', help='generate random label for optimization')
-    parser.add_argument('--r_feature', type=float, default=0.10, help='feature distribution regularization')
+    parser.add_argument('--r_feature', type=float, default=0.05, help='feature distribution regularization')
     parser.add_argument('--first_bn_multiplier', type=float, default=10.0, help='first BN layer multiplier')
     parser.add_argument('--tv_l1', type=float, default=0.0, help='TV L1 loss coefficient')
     parser.add_argument('--tv_l2', type=float, default=0.0001, help='TV L2 loss coefficient')

@@ -155,3 +155,27 @@ def denormalize(image_tensor, use_fp16=False):
         image_tensor[:, c] = torch.clamp(image_tensor[:, c] * s + m, 0, 1)
 
     return image_tensor
+
+
+def color_jitter(x, brightness=0.2, contrast=0.2):
+    """
+    Applies color jittering by adjusting brightness and contrast to a grayscale image.
+    Args:
+    - x (torch.Tensor): Input image tensor with shape (1, H, W) for MNIST.
+    - brightness (float): Factor to adjust brightness. A higher value increases brightness.
+    - contrast (float): Factor to adjust contrast. A higher value increases contrast.
+    
+    Returns:
+    - torch.Tensor: Color jittered image.
+    """
+    # Brightness adjustment
+    # Adding a random brightness factor
+    brightness_factor = 1.0 + (torch.rand(1).item() * 2 - 1) * brightness  # Between 1-brightness and 1+brightness
+    x_bright = x * brightness_factor
+    
+    # Contrast adjustment
+    mean = x_bright.mean()
+    contrast_factor = 1.0 + (torch.rand(1).item() * 2 - 1) * contrast  # Between 1-contrast and 1+contrast
+    x_jittered = (x_bright - mean) * contrast_factor + mean
+
+    return x_jittered

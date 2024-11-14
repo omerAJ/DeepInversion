@@ -190,33 +190,9 @@ class DeepInversionClass(object):
         best_cost = 1e4
         criterion = self.criterion
 
-        # targets = [1, 1, 1, 1, 1, 1,  #goldfish
-        #             933, 933, 933, 933, 933, 933,  #cheeseburger
-        #             430, 430, 430, 430, 430, 430,  #basketball
-        #             483, 483, 483, 483, 483, 483,  #castle
-        #             703, 703, 703, 703, 703, 703,   #park bench
-        #             779, 779, 779, 779, 779, 779  #school bus
-        #             ]
         if targets is None:
-            # Load softmax outputs from file instead of generating random class labels
-            softmax_target_file = r"D:\datasets\imagenetImages\all_softmax_outputs.npy"
+            targets = [i for i in range(10) for _ in range(4)]
 
-            # Load softmax targets from file
-            softmax_targets = np.load(softmax_target_file)  # Assuming shape (batch_size, num_classes)
-
-            # Convert to torch tensor and move to CUDA
-            targets = torch.from_numpy(softmax_targets).to('cuda')
-            # smooth targets using temperature
-            # targets = torch.nn.functional.softmax(targets / 1.0, dim=1)
-            # targets = [1, 1, 1, 1, 1, 1,  #goldfish
-            #         933, 933, 933, 933, 933, 933,  #cheeseburger
-            #         430, 430, 430, 430, 430, 430,  #basketball
-            #         483, 483, 483, 483, 483, 483,  #castle
-            #         703, 703, 703, 703, 703, 703,   #park bench
-            #         779, 779, 779, 779, 779, 779  #school bus
-            #         ]
-            targets = [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6,7,7,7,7,8,8,8,8,9,9,9,9
-                    ]
                     
             targets = torch.LongTensor(targets * (int(self.bs / len(targets)))).to('cuda')
             # Ensure compatibility with model’s data type (convert to float16 if `use_fp16` is True)
@@ -254,7 +230,8 @@ class DeepInversionClass(object):
             if lr_it==0:
                 iterations_per_layer = 2000
             else:
-                iterations_per_layer = 1000 if not skipfirst else 2000
+                # iterations_per_layer = 1000 if not skipfirst else 2000
+                iterations_per_layer = 2000 if not skipfirst else 2000
                 if self.setting_id == 2:
                     iterations_per_layer = 20000
 
@@ -312,9 +289,13 @@ class DeepInversionClass(object):
                 net_teacher.zero_grad()
 
                 def loss_calculation(inputs_jit):
+                    # Forward pass with teacher model
                     outputs = net_teacher(inputs_jit)
                     outputs = self.network_output_function(outputs)
+                    
+                    # Calculate primary loss with criterion
                     loss = criterion(outputs, targets)
+
                     # R_prior losses
                     loss_var_l1, loss_var_l2 = get_image_prior_losses(inputs_jit)
 
@@ -322,55 +303,58 @@ class DeepInversionClass(object):
                     rescale = [self.first_bn_multiplier] + [1. for _ in range(len(self.loss_r_feature_layers)-1)]
                     loss_r_feature = sum([mod.r_feature * rescale[idx] for (idx, mod) in enumerate(self.loss_r_feature_layers)])
 
-                    # R_ADI
+                    # R_ADI (Adversarial Distillation Interface)
                     loss_verifier_cig = torch.zeros(1)
-                    if self.adi_scale!=0.0:
+                    if self.adi_scale != 0.0:
                         if self.detach_student:
                             outputs_student = net_student(inputs_jit).detach()
                         else:
                             outputs_student = net_student(inputs_jit)
 
                         T = 3.0
-                        if 1:
-                            T = 3.0
-                            # Jensen Shanon divergence:
-                            # another way to force KL between negative probabilities
-                            P = nn.functional.softmax(outputs_student / T, dim=1)
-                            Q = nn.functional.softmax(outputs / T, dim=1)
-                            M = 0.5 * (P + Q)
+                        P = nn.functional.softmax(outputs_student / T, dim=1)
+                        Q = nn.functional.softmax(outputs / T, dim=1)
+                        M = 0.5 * (P + Q)
 
-                            P = torch.clamp(P, 0.01, 0.99)
-                            Q = torch.clamp(Q, 0.01, 0.99)
-                            M = torch.clamp(M, 0.01, 0.99)
-                            eps = 0.0
-                            loss_verifier_cig = 0.5 * kl_loss(torch.log(P + eps), M) + 0.5 * kl_loss(torch.log(Q + eps), M)
-                            # JS criteria - 0 means full correlation, 1 - means completely different
-                            loss_verifier_cig = 1.0 - torch.clamp(loss_verifier_cig, 0.0, 1.0)
+                        # Clamping values to avoid log(0) issues
+                        P = torch.clamp(P, 0.01, 0.99)
+                        Q = torch.clamp(Q, 0.01, 0.99)
+                        M = torch.clamp(M, 0.01, 0.99)
+                        eps = 0.0
+                        loss_verifier_cig = 0.5 * kl_loss(torch.log(P + eps), M) + 0.5 * kl_loss(torch.log(Q + eps), M)
+                        # JS criteria - 0 means full correlation, 1 - means completely different
+                        loss_verifier_cig = 1.0 - torch.clamp(loss_verifier_cig, 0.0, 1.0)
 
-                        if local_rank==0:
-                            if iteration % save_every==0:
-                                print('loss_verifier_cig', loss_verifier_cig.item())
+                        if local_rank == 0 and iteration % save_every == 0:
+                            print('loss_verifier_cig', loss_verifier_cig.item())
 
                     # l2 loss on images
                     loss_l2 = torch.norm(inputs_jit.view(self.bs, -1), dim=1).mean()
 
-                    # combining losses
+                    # Combining losses
                     loss_aux = self.var_scale_l2 * loss_var_l2 + \
                             self.var_scale_l1 * loss_var_l1 + \
                             self.bn_reg_scale * loss_r_feature + \
                             self.l2_scale * loss_l2
 
-                    if self.adi_scale!=0.0:
+                    if self.adi_scale != 0.0:
                         loss_aux += self.adi_scale * loss_verifier_cig
 
+                    # Final loss calculation
                     loss = self.main_loss_multiplier * loss + loss_aux
-                    return loss, loss_r_feature, outputs
+
+                    # Calculate accuracy
+                    _, predicted = torch.max(outputs, 1)
+                    correct = (predicted == targets).sum().item()
+                    accuracy = correct / targets.size(0)
+
+                    return loss, loss_r_feature, outputs, accuracy
 
                 if self.use_fp16:
                     with torch.amp.autocast("cuda"):
-                        loss, loss_r_feature, outputs = loss_calculation(inputs_jit)
+                        loss, loss_r_feature, outputs, accuracy = loss_calculation(inputs_jit)
                 else:
-                    loss, loss_r_feature, outputs = loss_calculation(inputs_jit)
+                    loss, loss_r_feature, outputs, accuracy = loss_calculation(inputs_jit)
 
                 # R_cross classification loss
                 
@@ -382,6 +366,7 @@ class DeepInversionClass(object):
                         print("total loss", loss.item())
                         print("loss_r_feature", loss_r_feature.item())
                         print("main criterion", criterion(outputs, targets).item())
+                        print("accuracy", accuracy)
 
                         if self.hook_for_display is not None:
                             self.hook_for_display(inputs, targets)

@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms, models
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import os
+import numpy as np
 
 # Set the path for saving datasets and model
 dataset_path = "D:/datasets"
@@ -20,10 +21,34 @@ transform = transforms.Compose([
 train_dataset = datasets.MNIST(root=dataset_path, train=True, transform=transform, download=True)
 test_dataset = datasets.MNIST(root=dataset_path, train=False, transform=transform, download=True)
 
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+# Step 2: Create a biased dataset
+def create_biased_dataset(dataset, few_samples_per_class=5, normal_samples_per_class=1000):
+    indices = []
+    class_counts = {i: 0 for i in range(10)}
+    
+    for i, (_, label) in enumerate(dataset):
+        # For classes 0-4, we limit the samples to a smaller number
+        if label in [0] and class_counts[label] < few_samples_per_class:
+            indices.append(i)
+            class_counts[label] += 1
+        # For classes 5-9, we keep a normal amount of samples
+        elif label in [1, 2, 3, 4, 5, 6, 7, 8, 9] and class_counts[label] < normal_samples_per_class:
+            indices.append(i)
+            class_counts[label] += 1
+    
+    # Display the class distribution for verification
+    print("Training class distribution:")
+    for class_label, count in class_counts.items():
+        print(f"Class {class_label}: {count} samples")
+    
+    return Subset(dataset, indices)
+
+# Create biased train dataset
+biased_train_dataset = create_biased_dataset(train_dataset)
+train_loader = DataLoader(biased_train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-# Step 2: Modify ResNet50 for MNIST (1 channel input and 10 output classes)
+# Step 3: Modify ResNet50 for MNIST (1 channel input and 10 output classes)
 class ResNet50Mnist(nn.Module):
     def __init__(self):
         super(ResNet50Mnist, self).__init__()
@@ -42,16 +67,19 @@ class ResNet50Mnist(nn.Module):
 # Instantiate the model
 model = ResNet50Mnist().to('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Step 3: Set up loss function and optimizer
+# Step 4: Set up loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Function to evaluate the model on the test set
+# Function to evaluate the model on the test set with class-wise accuracy
 def evaluate_model(model, test_loader):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.eval()
     correct = 0
     total = 0
+    class_correct = [0] * 10
+    class_total = [0] * 10
+
     with torch.no_grad():
         for images, labels in tqdm(test_loader, desc="Testing", leave=False):
             images, labels = images.to(device), labels.to(device)
@@ -59,10 +87,24 @@ def evaluate_model(model, test_loader):
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    accuracy = correct / total
-    return accuracy
+            
+            # Calculate per-class accuracy
+            for label, prediction in zip(labels, predicted):
+                if label == prediction:
+                    class_correct[label] += 1
+                class_total[label] += 1
 
-# Step 4: Train the model with evaluation and best model saving
+    accuracy = correct / total
+    class_accuracies = {i: class_correct[i] / class_total[i] if class_total[i] > 0 else 0 for i in range(10)}
+    
+    print("\nClass-wise accuracy:")
+    for class_label, acc in class_accuracies.items():
+        print(f"Class {class_label}: {acc*100:.2f}%")
+        
+    print(f"\nOverall Accuracy: {accuracy*100:.2f}%")
+    return accuracy, class_accuracies
+
+# Step 5: Train the model with evaluation and best model saving
 def train_model(model, criterion, optimizer, train_loader, test_loader, num_epochs=5):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
@@ -87,21 +129,17 @@ def train_model(model, criterion, optimizer, train_loader, test_loader, num_epoc
         
         # Calculate average training loss
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_loss:.4f}')
+        print(f'\nEpoch {epoch+1}/{num_epochs}, Training Loss: {epoch_loss:.4f}')
         
-        # Evaluate on test set
-        test_accuracy = evaluate_model(model, test_loader)
-        print(f'Epoch {epoch+1}/{num_epochs}, Test Accuracy: {test_accuracy:.4f}')
+        # Evaluate on test set with class-wise accuracy
+        test_accuracy, class_accuracies = evaluate_model(model, test_loader)
         
-        # Save the best model based on test accuracy
+        # Save the best model based on overall test accuracy
         if test_accuracy > best_accuracy:
             best_accuracy = test_accuracy
-            best_model_path = os.path.join(model_path, 'best_resnet50_mnist.pth')
+            best_model_path = os.path.join(model_path, 'only5SamplesZeroClass_resnet50_mnist.pth')
             torch.save(model.state_dict(), best_model_path)
-            print(f"Best model saved with Test Accuracy: {best_accuracy*100:.4f}%")
+            print(f"Best model saved with Overall Test Accuracy: {best_accuracy*100:.2f}%\n")
 
 # Train the model
 train_model(model, criterion, optimizer, train_loader, test_loader, num_epochs=5)
-
-# # At the end, best model will be saved in the 'models' directory
-# print(f"Training completed. Best model saved as '{best_model_path}'")
