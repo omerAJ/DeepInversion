@@ -45,7 +45,7 @@ def load_model_pytorch(model, load_model, gpu_n=0):
     if 'epoch' in checkpoint.keys():
         epoch_from = checkpoint['epoch']
     print("=> loaded checkpoint '{}' (epoch {})"
-          .format(load_model, epoch_from))
+        .format(load_model, epoch_from))
 
 
 def create_folder(directory):
@@ -107,17 +107,35 @@ def mom_cosine_policy(base_beta, warmup_length, epochs):
 
 def clip(image_tensor, use_fp16=False):
     '''
-    adjust the input based on mean and variance
+    Adjust the input based on mean and variance.
+    Automatically determines if the image is grayscale (1 channel) or RGB (3 channels).
+    
+    Parameters:
+    - image_tensor: The input tensor to be clipped.
+    - use_fp16: Whether to use half-precision floating-point numbers.
+    
+    Returns:
+    - image_tensor: The adjusted tensor.
     '''
-    if use_fp16:
-        mean = np.array([0.485, 0.456, 0.406], dtype=np.float16)
-        std = np.array([0.229, 0.224, 0.225], dtype=np.float16)
+    # Determine if the image is RGB or grayscale based on the number of channels
+    num_channels = image_tensor.shape[1]  # Assuming shape is [batch_size, channels, height, width]
+    
+    if num_channels == 3:
+        # RGB settings (for ImageNet or similar datasets)
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float16 if use_fp16 else np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float16 if use_fp16 else np.float32)
+    elif num_channels == 1:
+        # Grayscale settings (for MNIST)
+        mean = np.array([0.1307], dtype=np.float16 if use_fp16 else np.float32)
+        std = np.array([0.3081], dtype=np.float16 if use_fp16 else np.float32)
     else:
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-    for c in range(3):
+        raise ValueError("Unsupported number of channels. Expected 1 for grayscale or 3 for RGB images.")
+
+    # Apply the clipping based on mean and std
+    for c in range(num_channels):
         m, s = mean[c], std[c]
         image_tensor[:, c] = torch.clamp(image_tensor[:, c], -m / s, (1 - m) / s)
+
     return image_tensor
 
 

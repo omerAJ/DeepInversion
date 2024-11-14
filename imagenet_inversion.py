@@ -31,16 +31,23 @@ random.seed(0)
 
 import torch
 
+import torch
+
 def validate_one(input, target, model):
-    """Perform validation on the validation set where target is a probability distribution."""
+    """Perform validation on the validation set where target is a probability distribution or a one-hot label."""
 
     def accuracy(output, target, topk=(1,)):
-        """Computes the precision@k for the specified values of k, adapted for softmax target."""
+        """Computes the precision@k for the specified values of k, adapted for both softmax and one-hot target."""
         maxk = max(topk)
         batch_size = target.size(0)
 
-        # Get the class index with the highest probability in the target distribution for each sample
-        _, true_class = target.max(dim=1)
+        # Determine the true class based on target format
+        if target.dim() > 1 and target.size(1) > 1:
+            # If target is a distribution, get the class index with the highest probability
+            _, true_class = target.max(dim=1)
+        else:
+            # If target is a single label, use it directly as true class
+            true_class = target
 
         # Get the top-k predictions for each sample
         _, pred = output.topk(maxk, 1, True, True)
@@ -63,6 +70,7 @@ def validate_one(input, target, model):
 
 
 
+
 def run(args):
     torch.manual_seed(args.local_rank)
     device = torch.device('cuda' if torch.cuda.is_available() and not args.no_cuda else 'cpu')
@@ -79,7 +87,8 @@ def run(args):
 
     use_fp16 = args.fp16
     if use_fp16:
-        net, _ = amp.initialize(net, [], opt_level="O2")
+        # net, _ = amp.initialize(net, [], opt_level="O2")
+        pass
 
     print('==> Resuming from checkpoint..')
 
@@ -102,7 +111,8 @@ def run(args):
             net_verifier.eval()
 
             if use_fp16:
-                net_verifier = net_verifier.half()
+                # net_verifier = net_verifier.half()
+                pass
 
     if args.adi_scale != 0.0:
         student_arch = "resnet18"
@@ -110,7 +120,8 @@ def run(args):
         net_verifier.eval()
 
         if use_fp16:
-            net_verifier, _ = amp.initialize(net_verifier, [], opt_level="O2")
+            # net_verifier, _ = amp.initialize(net_verifier, [], opt_level="O2")
+            pass
 
         net_verifier = net_verifier.to(device)
         net_verifier.train()
@@ -118,7 +129,8 @@ def run(args):
         if use_fp16:
             for module in net_verifier.modules():
                 if isinstance(module, nn.BatchNorm2d):
-                    module.eval().half()
+                    # module.eval().half()
+                    module.eval()
 
     from deepinversion import DeepInversionClass
 
