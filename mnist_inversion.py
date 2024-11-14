@@ -41,7 +41,27 @@ class MobileNetV2Mnist(nn.Module):
     def forward(self, x):
         return self.model(x)
 
+# Define a simple CNN for MNIST
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((7, 7))  # Fixed output size
+        self.fc1 = nn.Linear(64 * 7 * 7, 128)
+        self.fc2 = nn.Linear(128, 10)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.25)
 
+    def forward(self, x):
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.adaptive_pool(x)  # Output fixed to 7x7
+        x = x.view(-1, 64 * 7 * 7)
+        x = self.dropout(self.relu(self.fc1(x)))
+        x = self.fc2(x)
+        return x
 # Define the ResNet50 adaptation for MNIST
 class ResNet50Mnist(nn.Module):
     def __init__(self):
@@ -81,7 +101,9 @@ def validate_one(input, target, model):
         return res
 
     with torch.no_grad():
+        # print("input: ", input.shape, "target: ", target.shape)
         output = model(input)
+        # print("output: ", output.shape, "target: ", target.shape)
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
 
     print("Verifier accuracy: ", prec1.item())
@@ -147,8 +169,9 @@ def run(args):
     net_verifier = None
     if args.verifier and args.adi_scale == 0:
         if args.local_rank == 0:
-            print("loading verifier: ", args.verifier_arch)
-            net_verifier = models.__dict__[args.verifier_arch](pretrained=True).to(device)
+            print("loading verifier: simpleCNN")
+            net_verifier = SimpleCNN().to(device)
+            load_model_pytorch(net_verifier, "D:\omer\DeepInversion\models\Verifier_simple_cnn_mnist.pth", gpu_n=torch.cuda.current_device())
             net_verifier.eval()
 
     # Configuration parameters
@@ -170,7 +193,7 @@ def run(args):
     parameters["random_label"] = False
     parameters["start_noise"] = True
     parameters["detach_student"] = False
-    parameters["do_flip"] = False  # No flip for MNIST
+    parameters["do_flip"] = True
 
     parameters["do_flip"] = args.do_flip
     parameters["random_label"] = args.random_label
@@ -209,7 +232,8 @@ def run(args):
         coefficients=coefficients,
         network_output_function=network_output_function,
         hook_for_display=hook_for_display,
-        dataset="mnist"
+        dataset="mnist",
+        do_augment=args.do_augment,
     )
 
     net_student = None
@@ -245,6 +269,7 @@ def main():
     parser.add_argument('--l2', type=float, default=0.00001, help='L2 loss coefficient')
     parser.add_argument('--main_loss_multiplier', type=float, default=1.0, help='main loss coefficient')
     parser.add_argument('--store_best_images', action='store_true', help='save best images')
+    parser.add_argument('--do_augment', action='store_true', help='wether to augment input images')
 
     args = parser.parse_args()
     print(args)

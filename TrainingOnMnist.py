@@ -59,6 +59,7 @@ class ResNet50Mnist(nn.Module):
         
         # Modify the final layer to output 10 classes (for MNIST)
         num_ftrs = self.model.fc.in_features
+        print("\n\n\n\nnum_ftrs: ", num_ftrs, "\n\n\n\n")
         self.model.fc = nn.Linear(num_ftrs, 10)
         
     def forward(self, x):
@@ -83,6 +84,7 @@ def evaluate_model(model, test_loader):
     with torch.no_grad():
         for images, labels in tqdm(test_loader, desc="Testing", leave=False):
             images, labels = images.to(device), labels.to(device)
+            print("\n\n\n\nimages: ", images.shape, "\n\n\n\n")
             outputs = model(images)
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
@@ -137,7 +139,7 @@ def train_model(model, criterion, optimizer, train_loader, test_loader, num_epoc
         # Save the best model based on overall test accuracy
         if test_accuracy > best_accuracy:
             best_accuracy = test_accuracy
-            best_model_path = os.path.join(model_path, 'only5SamplesZeroClass_resnet50_mnist.pth')
+            best_model_path = os.path.join(model_path, 'temp.pth')
             torch.save(model.state_dict(), best_model_path)
             print(f"Best model saved with Overall Test Accuracy: {best_accuracy*100:.2f}%\n")
 

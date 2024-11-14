@@ -179,3 +179,58 @@ def color_jitter(x, brightness=0.2, contrast=0.2):
     x_jittered = (x_bright - mean) * contrast_factor + mean
 
     return x_jittered
+
+import torch.nn.functional as F
+def differentiable_rotate_translate_blur(images, angle_range=5, translate_range=2, blur_sigma=1):
+    """
+    Apply differentiable rotation, translation, and Gaussian blur to a batch of images.
+    
+    Args:
+    - images (torch.Tensor): Input image tensor of shape (B, C, H, W).
+    - angle_range (float): Maximum angle for random rotation in degrees.
+    - translate_range (float): Maximum translation in pixels for x and y directions.
+    - blur_sigma (float): Standard deviation for Gaussian blur kernel.
+    
+    Returns:
+    - torch.Tensor: Augmented images with the same shape as input.
+    """
+    device = images.device
+    B, C, H, W = images.shape
+    
+    # Rotation
+    angles = (torch.rand(B, device=device) * 2 - 1) * angle_range  # Random angles in range [-angle_range, angle_range]
+    cos_vals = torch.cos(torch.deg2rad(angles))
+    sin_vals = torch.sin(torch.deg2rad(angles))
+
+    # Translation
+    translate_x = (torch.rand(B, device=device) * 2 - 1) * translate_range
+    translate_y = (torch.rand(B, device=device) * 2 - 1) * translate_range
+
+    # Construct affine transformation matrices
+    theta = torch.zeros((B, 2, 3), device=device)
+    theta[:, 0, 0] = cos_vals
+    theta[:, 0, 1] = -sin_vals
+    theta[:, 1, 0] = sin_vals
+    theta[:, 1, 1] = cos_vals
+    theta[:, 0, 2] = translate_x / (W / 2)  # Normalize for affine grid
+    theta[:, 1, 2] = translate_y / (H / 2)  # Normalize for affine grid
+
+    # Apply affine transformation (rotation + translation)
+    grid = F.affine_grid(theta, images.size(), align_corners=True)
+    transformed_images = F.grid_sample(images, grid, align_corners=True)
+
+    # Gaussian Blur
+    kernel_size = int(2 * 3 * blur_sigma + 1)  # Calculate kernel size based on sigma
+    x = torch.arange(kernel_size, dtype=torch.float32, device=device) - (kernel_size - 1) / 2
+    gauss_kernel = torch.exp(-0.5 * (x / blur_sigma) ** 2)
+    gauss_kernel = gauss_kernel / gauss_kernel.sum()
+
+    # Create 2D Gaussian kernel from 1D kernels
+    gauss_kernel_2d = gauss_kernel[:, None] @ gauss_kernel[None, :]
+    gauss_kernel_2d = gauss_kernel_2d.expand(C, 1, kernel_size, kernel_size)  # Shape (C, 1, K, K) for depthwise conv
+
+    # Apply Gaussian blur using depthwise convolution
+    padding = kernel_size // 2
+    blurred_images = F.conv2d(transformed_images, gauss_kernel_2d, padding=padding, groups=C)
+
+    return blurred_images
